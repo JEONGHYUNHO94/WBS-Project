@@ -8,23 +8,19 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font
 
-# 💡 [구글 연동 추가] 구글 시트 통신을 위한 라이브러리 추가
 import gspread
-import google.auth
+from google.oauth2.service_account import Credentials
 
 # 1. 화면 기본 설정
 st.set_page_config(page_title="중점추진과제 WBS", layout="wide")
 
-# 💡 상단 여백 최소화 및 [14인치 화면 찌그러짐 방지!] + [대시보드 콤팩트 UI 추가]
 st.markdown("""
 <style>
     .block-container {
         padding-top: 3.5rem !important; 
         padding-bottom: 1.5rem !important;
-        min-width: 1200px !important;  /* 14인치에서도 틀이 무너지지 않게 가로 크기 방어 */
+        min-width: 1200px !important; 
     }
-    
-    /* 14인치 화면에서 버튼 글씨 두 줄 깨짐 방지 */
     div[data-testid="stButton"] button, 
     div[data-testid="stDownloadButton"] button,
     div[data-testid="stLinkButton"] a {
@@ -33,16 +29,6 @@ st.markdown("""
         padding-left: 0.3rem !important; 
         padding-right: 0.3rem !important; 
         letter-spacing: -0.3px !important; 
-    }
-    
-    /* 💡 대시보드 카드 콤팩트화 및 상단 버튼들 높이 완벽 통일 */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        padding: 0.8rem !important;
-    }
-    
-    div[data-testid="stButton"] button,
-    div[data-testid="stDownloadButton"] button,
-    div[data-testid="stLinkButton"] a {
         min-height: 28px !important;
         height: 28px !important;
         padding-top: 2px !important;
@@ -51,7 +37,6 @@ st.markdown("""
         align-items: center !important;
         justify-content: center !important;
     }
-    
     div[data-testid="stButton"] button p,
     div[data-testid="stDownloadButton"] button p,
     div[data-testid="stLinkButton"] a p {
@@ -59,10 +44,13 @@ st.markdown("""
         line-height: 1.2 !important;
         margin: 0 !important;
     }
+    .cat-bar-est { position: absolute; top: 12px; height: 8px; background-color: #A9A9A9; border-radius: 4px; z-index: 1; }
+    .cat-bar-act { position: absolute; top: 25px; height: 8px; background-color: #555555; border-radius: 4px; z-index: 2; }
+    .stButton > button[kind="primary"] { background-color: #333333; border-color: #333333; }
+    .stButton > button[kind="primary"]:hover { background-color: #111111; border-color: #111111; }
 </style>
 """, unsafe_allow_html=True)
 
-# 💡 크롬 엉뚱한 자동번역(We->우리는) 완벽 차단용 투명 스크립트!
 components.html("""
 <script>
     const parentDoc = window.parent.document;
@@ -72,16 +60,13 @@ components.html("""
 """, height=0)
 
 # ==========================================
-# 💡 [핵심 엔진] 구글 시트 '멀티 탭(Multi-Tab)' 양방향 연동 엔진!
+# 💡 [핵심] 클라우드용 구글 시트 연동 엔진!
 # ==========================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1FBvFeUVOy0v2dSJOdZwnrx7aEggBNXkYaAlOGuPx54o/edit"
 
 @st.cache_resource
 def get_gspread_client():
-    from google.oauth2.service_account import Credentials
-    import gspread
-    
-    # Streamlit Cloud의 보안 저장소(Secrets)에서 구글 키를 불러옵니다.
+    # 💡 Streamlit Cloud의 [Advanced settings -> Secrets]에서 키를 불러옵니다!
     creds_dict = dict(st.secrets["gcp_service_account"])
     scopes = [
         "https://www.googleapis.com/auth/cloud-platform",
@@ -144,14 +129,11 @@ def save_data(projects, p_members, categories):
     try:
         gc = get_gspread_client()
         sh = gc.open_by_url(SHEET_URL)
-        
         existing_ws_titles = [ws.title for ws in sh.worksheets()]
         
         for p_name in projects:
             safe_p_name = p_name[:31] 
-            
             export_data = [["프로젝트명", "참여인원", "대분류", "세부업무명", "담당자", "관련부서", "관련문서", "계획시작일", "계획종료일", "실제시작일", "실제종료일", "비고(메모)"]]
-            
             p_mem = p_members.get(p_name, "")
             p_cats = categories.get(p_name, [])
             p_tasks = projects.get(p_name, [])
@@ -182,9 +164,8 @@ def save_data(projects, p_members, categories):
                 ws.update(values=export_data, range_name="A1")
                 
     except Exception as e:
-        st.error(f"⚠️ 구 시트 저장 실패: {e}")
+        st.error(f"⚠️ 구글 시트 저장 실패: {e}")
 
-# --- 앱 실행 시 최초 1회만 구글 시트에서 데이터를 불러옵니다 ---
 if 'initialized' not in st.session_state:
     saved_data = load_data()
     st.session_state.projects = saved_data.get("projects", {})
@@ -202,24 +183,17 @@ if 'initialized' not in st.session_state:
 
 keys_to_init = ['p1_proj', 'p1_mem', 'p1_cat', 'p2_sub', 'p2_man', 'p2_dep', 'p2_doc', 'in_new_cat', 'msg_p1', 'msg_p2']
 for k in keys_to_init:
-    if k not in st.session_state:
-        st.session_state[k] = ""
+    if k not in st.session_state: st.session_state[k] = ""
 if 'p2_start' not in st.session_state: st.session_state.p2_start = datetime.date.today()
 if 'p2_end' not in st.session_state: st.session_state.p2_end = datetime.date.today()
 
-# ==========================================
-# 💡 [핵심 엔진] 3단 달력(타임라인) 및 그리드 생성기
-# ==========================================
 def get_gantt_assets(min_date, max_date):
     min_date = min_date.replace(day=1)
-    if max_date.month == 12:
-        max_date = max_date.replace(year=max_date.year+1, month=1, day=1) - datetime.timedelta(days=1)
-    else:
-        max_date = max_date.replace(month=max_date.month+1, day=1) - datetime.timedelta(days=1)
+    if max_date.month == 12: max_date = max_date.replace(year=max_date.year+1, month=1, day=1) - datetime.timedelta(days=1)
+    else: max_date = max_date.replace(month=max_date.month+1, day=1) - datetime.timedelta(days=1)
         
     total_days = max(1, (max_date - min_date).days + 1)
     dates = pd.date_range(min_date, max_date)
-    
     years_data = {}
     months_data = []
     
@@ -229,8 +203,7 @@ def get_gantt_assets(min_date, max_date):
         month_days = 0
         for d in dates:
             years_data[d.year] = years_data.get(d.year, 0) + 1
-            if d.month == current_month:
-                month_days += 1
+            if d.month == current_month: month_days += 1
             else:
                 months_data.append((current_year, current_month, month_days))
                 current_month = d.month
@@ -256,7 +229,6 @@ def get_gantt_assets(min_date, max_date):
     for y, m, d_count in months_data:
         w_pct = (d_count / total_days) * 100
         w_width = 100 / 4
-        
         week_html += f"<div style='width:{w_pct}%; display:flex; border-right:1px solid #ccc; box-sizing:border-box;'>"
         for w in range(1, 5):
             br = "border-right:1px dashed #ccc;" if w < 4 else ""
@@ -271,19 +243,14 @@ def get_gantt_assets(min_date, max_date):
         
     week_html += "</div>"
     bg_grid_html += "</div>"
-    
     timeline_html = f"<div style='width:100%; display:flex; flex-direction:column; background-color:#f4f6f9; border:1px solid #ccc; border-bottom:none; border-radius:4px 4px 0 0;'>{year_html}{month_html}{week_html}</div>"
     
     return timeline_html, bg_grid_html, min_date, max_date, total_days
 
-# ==========================================
-# 💡 [팝업] 프로젝트 영구 삭제 (+ 💡 구글 시트 탭 연동 삭제 기능 추가!)
-# ==========================================
 @st.dialog("프로젝트 영구 삭제")
 def delete_popup(p_name):
     st.write(f"**[{p_name}]** 프로젝트를 삭제하시겠습니까?")
     step1 = st.checkbox("네, 삭제를 진행하겠습니다.")
-    
     if step1:
         st.error("정말 삭제하시겠습니까? 관련된 모든 세부 업무와 일정이 영구히 삭제됩니다.")
         c1, c2 = st.columns(2)
@@ -297,8 +264,7 @@ def delete_popup(p_name):
                 else:
                     ws = sh.worksheet(p_name[:31])
                     ws.clear() 
-            except:
-                pass
+            except: pass
                 
             if p_name in st.session_state.projects: del st.session_state.projects[p_name]
             if p_name in st.session_state.p_members: del st.session_state.p_members[p_name]
@@ -309,9 +275,6 @@ def delete_popup(p_name):
         if c2.button("아니오 (취소)", use_container_width=True):
             st.rerun()
 
-# ==========================================
-# 💡 [팝업 1단계] 프로젝트 만들기
-# ==========================================
 def _save_project_data():
     p_name = st.session_state.p1_proj.strip()
     p_mem = st.session_state.p1_mem.strip()
@@ -340,8 +303,7 @@ def _save_project_data():
     st.session_state.p1_cat = "" 
     return True
 
-def cb_save_p1_continuous():
-    _save_project_data()
+def cb_save_p1_continuous(): _save_project_data()
 
 def cb_save_p1_and_close():
     if _save_project_data():
@@ -365,7 +327,6 @@ def popup_step1():
         st.rerun()
         
     st.write("프로젝트를 생성하고 굵직한 **대분류(뼈대)**를 먼저 만들어 둡니다.")
-    
     c1, c2 = st.columns([6, 4])
     p_name = c1.text_input("프로젝트명", key="p1_proj", placeholder="예: 프로젝트 A")
     c2.text_input("참여 인원", key="p1_mem", placeholder="예: 5명")
@@ -380,67 +341,46 @@ def popup_step1():
         
     if p_name and p_name in st.session_state.categories and st.session_state.categories[p_name]:
         if st.session_state.msg_p1:
-            if "⚠️" in st.session_state.msg_p1:
-                st.warning(st.session_state.msg_p1)
-            else:
-                st.success(st.session_state.msg_p1)
+            if "⚠️" in st.session_state.msg_p1: st.warning(st.session_state.msg_p1)
+            else: st.success(st.session_state.msg_p1)
                 
         st.write(f"**[{p_name}]에 생성된 대분류 목록:**")
-        for c in st.session_state.categories[p_name]:
-            st.markdown(f"- {c}")
+        for c in st.session_state.categories[p_name]: st.markdown(f"- {c}")
     elif st.session_state.msg_p1:
-        if "⚠️" in st.session_state.msg_p1:
-            st.warning(st.session_state.msg_p1)
-        else:
-            st.success(st.session_state.msg_p1)
+        if "⚠️" in st.session_state.msg_p1: st.warning(st.session_state.msg_p1)
+        else: st.success(st.session_state.msg_p1)
 
-# ==========================================
-# 💡 [새 기능] 프로젝트 기본 정보 변경 엔진 (이름/인원)
-# ==========================================
 def update_project_info(old_name, new_name, new_mem):
     new_name = new_name.strip()
     new_mem = new_mem.strip()
-    
-    if not new_name:
-        return False, "프로젝트명을 입력해주세요."
+    if not new_name: return False, "프로젝트명을 입력해주세요."
         
-    # 이름은 그대로, 참여인원만 바뀐 경우
     if old_name == new_name:
         if st.session_state.p_members.get(old_name) != new_mem:
             st.session_state.p_members[old_name] = new_mem
             save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
         return True, ""
         
-    # 이름이 바뀌었는데, 이미 있는 이름인 경우 차단
-    if new_name in st.session_state.projects:
-        return False, "이미 존재하는 프로젝트명입니다."
+    if new_name in st.session_state.projects: return False, "이미 존재하는 프로젝트명입니다."
         
-    # 💡 구글 시트 탭 이름 먼저 변경 시도
     try:
         gc = get_gspread_client()
         sh = gc.open_by_url(SHEET_URL)
         ws = sh.worksheet(old_name[:31])
         ws.update_title(new_name[:31])
-    except Exception as e:
-        pass # 빈 껍데기 프로젝트라서 아직 탭이 없을 수도 있으므로 패스
+    except Exception as e: pass 
         
-    # 세션 데이터 이관 작업
     st.session_state.projects[new_name] = st.session_state.projects.pop(old_name)
     st.session_state.categories[new_name] = st.session_state.categories.pop(old_name)
     st.session_state.p_members.pop(old_name, None)
     st.session_state.p_members[new_name] = new_mem
     
-    # 만약 현재 상세페이지에서 바꿨다면 현재 페이지 이름도 바꿔줌
     if st.session_state.get('current_page') == old_name:
         st.session_state.current_page = new_name
         
-    # 최종 저장 (시트 안의 모든 행에 적힌 프로젝트명이 새 이름으로 덮어써짐)
     save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
     return True, ""
 
-# ==========================================
-# 💡 [팝업 2단계] 세부업무 입력 (프로젝트 수정 기능 추가됨)
-# ==========================================
 def save_p2(p_sel, cat_sel):
     sub = st.session_state.p2_sub.strip()
     man = st.session_state.p2_man.strip()
@@ -502,20 +442,17 @@ def popup_step2(p_sel):
             if success:
                 st.session_state.close_dialog = True
                 st.rerun() 
-            else:
-                st.error(msg)
+            else: st.error(msg)
                 
     st.write(f"**[{p_sel}]** 프로젝트에 세부 업무를 추가합니다.")
     
     cat_list = st.session_state.categories.get(p_sel, [])
     options_c = cat_list + ["직접 입력 (새 대분류 추가)"]
-    
     c_sel = st.selectbox("대분류 선택", options_c)
     
     if c_sel == "직접 입력 (새 대분류 추가)":
         final_cat = st.text_input("새 대분류 직접 입력", placeholder="여기에 새 대분류를 타이핑하세요", label_visibility="collapsed", key="in_new_cat")
-    else:
-        final_cat = c_sel
+    else: final_cat = c_sel
         
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     st.text_input("구분 (세부 업무명)", key="p2_sub", placeholder="예: 도면 설계 (※ 비워두면 대분류 이름만 저장됩니다)")
@@ -531,14 +468,12 @@ def popup_step2(p_sel):
     
     st.write("") 
     c_btn1, c_btn2, c_btn3 = st.columns(3)
-    
     c_btn1.button("연속 저장", type="primary", use_container_width=True, on_click=cb_save_continuous, args=(p_sel, final_cat))
     c_btn2.button("저장 후 닫기", type="primary", use_container_width=True, on_click=cb_save_and_close, args=(p_sel, final_cat))
     c_btn3.button("닫기", use_container_width=True, on_click=cb_just_close)
         
     if st.session_state.msg_p2:
-        if "⚠️" in st.session_state.msg_p2:
-            st.warning(st.session_state.msg_p2)
+        if "⚠️" in st.session_state.msg_p2: st.warning(st.session_state.msg_p2)
         else:
             st.success(st.session_state.msg_p2)
             added_tasks = [t['소분류'] for t in st.session_state.projects.get(p_sel, []) if t['대분류'] == final_cat.strip()]
@@ -548,9 +483,6 @@ def popup_step2(p_sel):
                     disp_t = t if t else "- (대분류만 저장됨)"
                     st.markdown(f"↳ {disp_t}")
 
-# ==========================================
-# 💡 [팝업 3] 전체 업무 내용 수정 (+ 꺼짐 방지 & 무한 이동 기능)
-# ==========================================
 @st.dialog("업무 내용 수정", width="large")
 def edit_task_popup(p_name, default_cat=None): 
     raw_data = st.session_state.projects.get(p_name, [])
@@ -561,7 +493,6 @@ def edit_task_popup(p_name, default_cat=None):
         return
 
     st.write("수정할 업무를 선택 후 내용을 덮어쓰거나, **대분류 순서를 위아래로 자유롭게 이동**할 수 있습니다.")
-    
     c1, c2 = st.columns(2)
     
     sel_key = f"edit_sel_{p_name}"
@@ -597,10 +528,8 @@ def edit_task_popup(p_name, default_cat=None):
             
             styled_cats = []
             for c in updated_cats:
-                if c == cat_sel:
-                    styled_cats.append(f"<span style='color:#0056b3; font-weight:bold; border-bottom:2px solid #0056b3;'>{c}</span>")
-                else:
-                    styled_cats.append(c)
+                if c == cat_sel: styled_cats.append(f"<span style='color:#0056b3; font-weight:bold; border-bottom:2px solid #0056b3;'>{c}</span>")
+                else: styled_cats.append(c)
             order_str = " ➔ ".join(styled_cats)
             
             st.markdown(f"""
@@ -663,8 +592,7 @@ def edit_task_popup(p_name, default_cat=None):
                     cat_idx = st.session_state.categories[p_name].index(cat_sel)
                     st.session_state.categories[p_name][cat_idx] = new_cat
                 for d in st.session_state.projects[p_name]:
-                    if d['대분류'] == cat_sel:
-                        d['대분류'] = new_cat
+                    if d['대분류'] == cat_sel: d['대분류'] = new_cat
                 st.session_state[sel_key] = new_cat
             
             target_data['소분류'] = new_sub
@@ -678,9 +606,6 @@ def edit_task_popup(p_name, default_cat=None):
             st.success("업무 내용이 깔끔하게 덮어쓰기 되었습니다!")
             st.rerun()
 
-# ==========================================
-# 💡 [팝업 4] 현진행일정 업데이트
-# ==========================================
 def cb_update_progress(p_name, target_idx, sk, ek, memo_val):
     st.session_state.projects[p_name][target_idx]['실제시작일'] = str(st.session_state[sk])
     st.session_state.projects[p_name][target_idx]['실제종료일'] = str(st.session_state[ek])
@@ -697,7 +622,6 @@ def update_progress_popup(p_name, target_idx):
         st.rerun()
         
     target_data = st.session_state.projects[p_name][target_idx]
-    
     disp_sub = target_data['소분류'] if target_data['소분류'] else "-"
     st.write(f"**[{target_data['대분류']}] {disp_sub}**")
     st.info(f"💡 당초 계획 일정: {target_data['예상시작일']} ~ {target_data['예상종료일']}")
@@ -723,9 +647,6 @@ def update_progress_popup(p_name, target_idx):
     st.write("") 
     st.button("저장 및 반영", type="primary", use_container_width=True, on_click=cb_update_progress, args=(p_name, target_idx, sk, ek, memo_val))
 
-# ==========================================
-# 💡 [팝업 5] 프로젝트 대분류 진행 요약
-# ==========================================
 @st.dialog("프로젝트 진행 요약", width="large")
 def summary_popup(p_name):
     st.markdown(f"### 📊 [{p_name}] 대분류 일정 요약")
@@ -750,8 +671,7 @@ def summary_popup(p_name):
     categories = st.session_state.categories.get(p_name, [])
     for cat in categories:
         cat_items = [d for d in raw_data if d['대분류'] == cat]
-        if not cat_items:
-            continue
+        if not cat_items: continue
             
         c_est_starts = [pd.to_datetime(d['예상시작일']) for d in cat_items if d.get('예상시작일')]
         c_est_ends = [pd.to_datetime(d['예상종료일']) for d in cat_items if d.get('예상종료일')]
@@ -793,30 +713,10 @@ def summary_popup(p_name):
         st.rerun()
 
 # ==========================================
-# 💡 [CSS] 무채색 버튼 및 UI 스타일
-# ==========================================
-st.markdown("""
-<style>
-    .cat-bar-est { position: absolute; top: 12px; height: 8px; background-color: #A9A9A9; border-radius: 4px; z-index: 1; }
-    .cat-bar-act { position: absolute; top: 25px; height: 8px; background-color: #555555; border-radius: 4px; z-index: 2; }
-    
-    .stButton > button[kind="primary"] {
-        background-color: #333333; 
-        border-color: #333333;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background-color: #111111; 
-        border-color: #111111;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ==========================================
 # 3. 메인 화면 (대시보드 ↔ 상세페이지)
 # ==========================================
 if st.session_state.current_page == 'Dashboard':
     
-    # 💡 [핵심수정] 상단 버튼 너비 비율 조정: 앞의 두 버튼을 1.1로 좁게, 새프로젝트 버튼을 1.8로 넓게 설정
     c_head1, c_head2, c_head3, c_head4 = st.columns([6.0, 1.1, 1.1, 1.8], vertical_alignment="bottom")
     
     with c_head1:
@@ -871,11 +771,10 @@ if st.session_state.current_page == 'Dashboard':
     st.markdown("<hr style='margin: -16px 0 20px 0; border: 1.5px solid #ccc;'>", unsafe_allow_html=True)
     
     st.write("### 프로젝트 요약 대시보드")
-    
     project_names = list(st.session_state.projects.keys())
     
     if not project_names:
-        st.info("아직 생성된 프로젝트가 없습니다. 위 버튼을 눌러 첫 프로젝트 시작하세요!")
+        st.info("아직 생성된 프로젝트가 없습니다. 위 버튼을 눌러 첫 프로젝트를 시작하세요!")
     else:
         cols = st.columns(3) 
         
@@ -887,7 +786,6 @@ if st.session_state.current_page == 'Dashboard':
                     raw_data = st.session_state.projects[p]
                     p_mem = st.session_state.p_members.get(p, '')
                     
-                    # 💡 UI 콤팩트화: 버튼 이름 축소 및 비율 조정
                     c_title, c_add, c_sum, c_del = st.columns([5.2, 1.6, 1.6, 1.6], vertical_alignment="center")
                     with c_title:
                         if st.button(f"{p}", key=f"go_{p}", use_container_width=True, type="primary"):
@@ -903,7 +801,6 @@ if st.session_state.current_page == 'Dashboard':
                         if st.button("삭제", key=f"del_{p}", use_container_width=True):
                             delete_popup(p)
                             
-                    # 💡 담당자를 버튼 바로 밑으로 바짝 올리고 '업무 00개' 문구 삭제
                     st.markdown(f"<div class='notranslate' style='font-size:13px; color:#444; margin-top:-5px; margin-bottom:5px;'>👤 <b>담당자:</b> {p_mem}</div>", unsafe_allow_html=True)
 
                     if len(raw_data) > 0:
@@ -924,7 +821,6 @@ if st.session_state.current_page == 'Dashboard':
                         e_right = max(0.0, min(100.0, ((p_est_end - full_min_date).days + 1) / total_days * 100))
                         e_width = max(0.5, e_right - e_left)
                         
-                        # 💡 [최종 핵심 수정] 막대 높이를 10px로 유지하고, top을 '4px'로 조정하여 위/아래 4px씩 완벽한 중앙 정렬 완성!
                         chart_html = f"""
                         <div class="notranslate" style="font-size:12px; color:#777; margin-bottom:4px; line-height:1.2;">📅 {full_min_date.strftime('%y.%m.%d')} ~ {full_max_date.strftime('%y.%m.%d')}</div>
                         <div class="notranslate" style='position:relative; width:100%; height:20px; background-color:#fff; border-radius:4px; border:1px solid #ddd; box-sizing:border-box; overflow:hidden;'>
@@ -943,10 +839,8 @@ if st.session_state.current_page == 'Dashboard':
                             a_right = max(0.0, min(100.0, ((p_act_end - full_min_date).days + 1) / total_days * 100))
                             a_width = max(0.5, a_right - a_left)
                             
-                            # 실제 진행 막대 역시 top: 4px 로 동일하게 맞춤
                             chart_html += f"<div style='position:absolute; top:4px; height:10px; background-color:#4169E1; opacity:0.85; border-radius:3px; left:{a_left}%; width:{a_width}%; z-index:2;'></div>"
                             
-                        # 카드 하단 여백 추가
                         chart_html += "</div><div style='height: 10px;'></div>"
                         
                         st.markdown(chart_html, unsafe_allow_html=True)
@@ -1011,7 +905,6 @@ else:
         h3.markdown("<div class='header-cell notranslate'>관련부서</div>", unsafe_allow_html=True)
         h4.markdown("<div class='header-cell notranslate'>관련문서</div>", unsafe_allow_html=True)
         h5.markdown("<div class='header-cell notranslate'>진행 현황</div>", unsafe_allow_html=True)
-        
         h6.markdown(f"<div style='width:100%;'>{timeline_html}</div>", unsafe_allow_html=True)
 
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)

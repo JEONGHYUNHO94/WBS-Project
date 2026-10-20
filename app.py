@@ -109,19 +109,16 @@ st.markdown("""
     }
     .kpi { flex: 0 0 240px !important; }
 
-    /* 카드 전체 클릭: 'go_' 버튼을 투명하게 카드 크기로 확장 */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title) { position: relative; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title):hover { border-color: #0E7490 !important; box-shadow: 0 4px 16px rgba(14,116,144,.14); }
-    div[class*="st-key-go_"] { position: absolute !important; inset: 0 !important; z-index: 1 !important; margin: 0 !important; width: 100% !important; height: 100% !important; }
-    div[class*="st-key-go_"] div[data-testid="stButton"] { width: 100% !important; height: 100% !important; }
-    div[class*="st-key-go_"] button { width: 100% !important; height: 100% !important; min-height: 100% !important; opacity: 0 !important; border-radius: 16px !important; cursor: pointer !important; }
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title) div[data-testid="stHorizontalBlock"] { position: relative; z-index: 2; }
+    /* 카드 클릭: 숨김 버튼('go_')을 JS가 대신 눌러 줌 (오버레이를 쓰지 않으므로 다른 버튼을 가리지 않음) */
+    div[class*="st-key-go_"] { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; opacity: 0 !important; pointer-events: none !important; margin: 0 !important; }
+    .wbs-card { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+    .wbs-card:hover { border-color: #0E7490 !important; box-shadow: 0 4px 16px rgba(14,116,144,.14); }
 
     .pc-title { font-size: 18px; font-weight: 800; color: #0F2A3D; line-height: 1.3; letter-spacing: -0.3px; word-break: keep-all; }
     .pc-meta { display: flex; gap: 14px; margin: 6px 0 12px 0; font-size: 12.5px; color: #5B7083; }
     .pc-meta span { display: inline-flex; align-items: center; gap: 4px; }
     .pc-prog { height: 6px; background: #E3EBF0; border-radius: 3px; overflow: hidden; margin-top: 10px; }
-    .pc-prog-bar { height: 100%; background: #0E7490; border-radius: 3px; }
+    .pc-prog-bar { height: 100%; background: rgba(14,116,144,.35); border-radius: 3px; }
     .pc-prog-txt { font-size: 12px; color: #5B7083; margin: 5px 0 12px 0; }
     .pc-range { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #5B7083; margin-bottom: 5px; }
 
@@ -156,6 +153,22 @@ components.html("""
     const parentDoc = window.parent.document;
     parentDoc.body.classList.add('notranslate');
     parentDoc.body.setAttribute('translate', 'no');
+
+    if (!window.parent.__wbsCardBinder) {
+        window.parent.__wbsCardBinder = setInterval(function () {
+            parentDoc.querySelectorAll('div[class*="st-key-go_"]').forEach(function (holder) {
+                const card = holder.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
+                if (!card || card.dataset.wbsBound === '1') return;
+                card.dataset.wbsBound = '1';
+                card.classList.add('wbs-card');
+                card.addEventListener('click', function (e) {
+                    if (e.target.closest('button, a, input, textarea, [role="dialog"]')) return;
+                    const btn = holder.querySelector('button');
+                    if (btn) btn.click();
+                });
+            });
+        }, 400);
+    }
 </script>
 """, height=0)
 
@@ -950,8 +963,7 @@ if st.session_state.current_page == 'Dashboard':
 
                             chart_html += f"<div style='position:absolute; top:14px; height:7px; background-color:{C_ACT}; border-radius:3px; left:{a_left}%; width:{a_width}%; z-index:2;'></div>"
 
-                        chart_html += "</div>"
-                        chart_html += f"<div class='pc-prog'><div class='pc-prog-bar' style='width:{pct}%;'></div></div><div class='pc-prog-txt notranslate'>실적 입력 {done_cnt}/{tot}건 · {pct}%</div>"
+                        chart_html += "</div><div style='height:14px;'></div>"
 
                         st.markdown(chart_html, unsafe_allow_html=True)
                     else:

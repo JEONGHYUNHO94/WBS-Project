@@ -109,10 +109,19 @@ st.markdown("""
     }
     .kpi { flex: 0 0 240px !important; }
 
-    /* 카드 클릭: 숨김 버튼('go_')을 JS가 대신 눌러 줌 (오버레이를 쓰지 않으므로 다른 버튼을 가리지 않음) */
-    div[class*="st-key-go_"] { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; opacity: 0 !important; pointer-events: none !important; margin: 0 !important; }
-    .wbs-card { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-    .wbs-card:hover { border-color: #0E7490 !important; box-shadow: 0 4px 16px rgba(14,116,144,.14); }
+    /* 프로젝트명 버튼: 제목처럼 보이는 텍스트 버튼 */
+    div[class*="st-key-go_"] div[data-testid="stButton"] button {
+        background: transparent !important; border: none !important; box-shadow: none !important;
+        height: auto !important; min-height: 0 !important; padding: 2px 0 !important;
+        justify-content: flex-start !important; text-align: left !important;
+        color: #0F2A3D !important;
+    }
+    div[class*="st-key-go_"] div[data-testid="stButton"] button p {
+        font-size: 19px !important; font-weight: 800 !important; letter-spacing: -0.3px !important; line-height: 1.3 !important;
+        color: #0F2A3D !important; white-space: normal !important; word-break: keep-all !important; text-align: left !important;
+    }
+    div[class*="st-key-go_"] div[data-testid="stButton"] button:hover { background: transparent !important; }
+    div[class*="st-key-go_"] div[data-testid="stButton"] button:hover p { color: #0E7490 !important; text-decoration: underline; }
 
     .pc-title { font-size: 18px; font-weight: 800; color: #0F2A3D; line-height: 1.3; letter-spacing: -0.3px; word-break: keep-all; }
     .pc-meta { display: flex; gap: 14px; margin: 6px 0 12px 0; font-size: 12.5px; color: #5B7083; }
@@ -154,21 +163,6 @@ components.html("""
     parentDoc.body.classList.add('notranslate');
     parentDoc.body.setAttribute('translate', 'no');
 
-    if (!window.parent.__wbsCardBinder) {
-        window.parent.__wbsCardBinder = setInterval(function () {
-            parentDoc.querySelectorAll('div[class*="st-key-go_"]').forEach(function (holder) {
-                const card = holder.closest('div[data-testid="stVerticalBlockBorderWrapper"]');
-                if (!card || card.dataset.wbsBound === '1') return;
-                card.dataset.wbsBound = '1';
-                card.classList.add('wbs-card');
-                card.addEventListener('click', function (e) {
-                    if (e.target.closest('button, a, input, textarea, [role="dialog"]')) return;
-                    const btn = holder.querySelector('button');
-                    if (btn) btn.click();
-                });
-            });
-        }, 400);
-    }
 </script>
 """, height=0)
 
@@ -922,8 +916,11 @@ if st.session_state.current_page == 'Dashboard':
                     done_cnt = sum(1 for d in raw_data if d.get('실제시작일') and d.get('실제종료일'))
                     pct = int(done_cnt / tot * 100) if tot else 0
 
+                    if st.button(p, key=f"go_{p}"):
+                        st.session_state.current_page = p
+                        st.rerun()
                     st.markdown(
-                        f"<div class='pc-title notranslate'>{html.escape(p)}</div>"
+                        f"<span class='pc-title' style='display:none;'></span>"
                         f"<div class='pc-meta notranslate'><span>{ICON_USER}{html.escape(p_mem) if p_mem else '-'}</span><span>{ICON_TASK}업무 {tot}건</span></div>",
                         unsafe_allow_html=True)
 
@@ -968,11 +965,6 @@ if st.session_state.current_page == 'Dashboard':
                         st.markdown(chart_html, unsafe_allow_html=True)
                     else:
                         st.markdown("<div style='font-size:12.5px; color:#8A9BA8; margin:14px 0 16px 0;'>등록된 일정이 없습니다. '업무추가'로 시작하세요.</div>", unsafe_allow_html=True)
-
-                    # 카드 전체를 덮는 투명 버튼 (CSS로 카드 크기만큼 늘림) → 카드 안쪽을 누르면 입장
-                    if st.button("열기", key=f"go_{p}"):
-                        st.session_state.current_page = p
-                        st.rerun()
 
                     b2, b3, b4 = st.columns([1.5, 1.1, 1.1])
                     with b2:

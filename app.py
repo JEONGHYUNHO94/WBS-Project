@@ -107,6 +107,16 @@ st.markdown("""
         border-radius: 16px !important;
         box-shadow: 0 1px 2px rgba(15,42,61,.05);
     }
+    .kpi { flex: 0 0 240px !important; }
+
+    /* 카드 전체 클릭: 'go_' 버튼을 투명하게 카드 크기로 확장 */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title) { position: relative; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title):hover { border-color: #0E7490 !important; box-shadow: 0 4px 16px rgba(14,116,144,.14); }
+    div[class*="st-key-go_"] { position: absolute !important; inset: 0 !important; z-index: 1 !important; margin: 0 !important; width: 100% !important; height: 100% !important; }
+    div[class*="st-key-go_"] div[data-testid="stButton"] { width: 100% !important; height: 100% !important; }
+    div[class*="st-key-go_"] button { width: 100% !important; height: 100% !important; min-height: 100% !important; opacity: 0 !important; border-radius: 16px !important; cursor: pointer !important; }
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.pc-title) div[data-testid="stHorizontalBlock"] { position: relative; z-index: 2; }
+
     .pc-title { font-size: 18px; font-weight: 800; color: #0F2A3D; line-height: 1.3; letter-spacing: -0.3px; word-break: keep-all; }
     .pc-meta { display: flex; gap: 14px; margin: 6px 0 12px 0; font-size: 12.5px; color: #5B7083; }
     .pc-meta span { display: inline-flex; align-items: center; gap: 4px; }
@@ -420,8 +430,8 @@ def popup_step1():
 
     st.write("프로젝트를 생성하고 굵직한 **대분류(뼈대)**를 먼저 만들어 둡니다.")
     c1, c2 = st.columns([6, 4])
-    p_name = c1.text_input("프로젝트명", key="p1_proj", placeholder="예: 프로젝트 A")
-    c2.text_input("참여 인원", key="p1_mem", placeholder="예: 5명")
+    p_name = c1.text_input("프로젝트명", key="p1_proj", placeholder="예: 얼음정수기 V2 개발")
+    c2.text_input("참여 인원", key="p1_mem", placeholder="예: PM 홍길동, 아무개")
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     st.text_input("추가할 대분류 이름", key="p1_cat", placeholder="예: 1. 기획 / 2. 부품개발 (※ 비워두면 프로젝트만 생성됩니다)")
@@ -877,15 +887,9 @@ if st.session_state.current_page == 'Dashboard':
     project_names = list(st.session_state.projects.keys())
 
     # ----- 요약 카드(KPI) -----
-    all_tasks = [d for v in st.session_state.projects.values() for d in v]
-    n_tasks = len(all_tasks)
-    n_done = sum(1 for d in all_tasks if d.get('실제시작일') and d.get('실제종료일'))
-    pct_all = int(n_done / n_tasks * 100) if n_tasks else 0
     st.markdown(
         "<div class='kpi-row notranslate'>"
         f"<div class='kpi'><div class='kpi-label'>진행 중인 프로젝트</div><div class='kpi-value'>{len(project_names)}<small>개</small></div></div>"
-        f"<div class='kpi'><div class='kpi-label'>전체 세부 업무</div><div class='kpi-value'>{n_tasks}<small>건</small></div></div>"
-        f"<div class='kpi'><div class='kpi-label'>실적 입력 완료</div><div class='kpi-value'>{n_done}<small>건 ({pct_all}%)</small></div></div>"
         "</div>",
         unsafe_allow_html=True)
 
@@ -953,11 +957,12 @@ if st.session_state.current_page == 'Dashboard':
                     else:
                         st.markdown("<div style='font-size:12.5px; color:#8A9BA8; margin:14px 0 16px 0;'>등록된 일정이 없습니다. '업무추가'로 시작하세요.</div>", unsafe_allow_html=True)
 
-                    b1, b2, b3, b4 = st.columns([1.15, 1.55, 1.15, 1.15])
-                    with b1:
-                        if st.button("열기", key=f"go_{p}", use_container_width=True, type="primary", icon=":material/arrow_forward:"):
-                            st.session_state.current_page = p
-                            st.rerun()
+                    # 카드 전체를 덮는 투명 버튼 (CSS로 카드 크기만큼 늘림) → 카드 안쪽을 누르면 입장
+                    if st.button("열기", key=f"go_{p}"):
+                        st.session_state.current_page = p
+                        st.rerun()
+
+                    b2, b3, b4 = st.columns([1.5, 1.1, 1.1])
                     with b2:
                         if st.button("업무추가", key=f"add_{p}", use_container_width=True, icon=":material/add:"):
                             popup_step2(p)

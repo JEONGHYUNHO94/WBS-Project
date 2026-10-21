@@ -592,21 +592,21 @@ def popup_step2(p_sel):
                     disp_t = t if t else "- (대분류만 저장됨)"
                     st.markdown(f"↳ {disp_t}")
 
-@st.dialog("업무 내용 수정", width="large")
+@st.dialog("업무 추가 / 수정", width="large")
 def edit_task_popup(p_name, default_cat=None):
     raw_data = st.session_state.projects.get(p_name, [])
     cat_list = st.session_state.categories.get(p_name, [])
 
     if not cat_list:
-        st.warning("수정할 대분류가 없습니다.")
+        st.warning("대분류가 없습니다. 대시보드의 '업무추가' 버튼으로 먼저 대분류를 만들어 주세요.")
         return
-
-    st.write("수정할 업무를 선택 후 내용을 덮어쓰거나, **대분류 순서를 위아래로 자유롭게 이동**할 수 있습니다.")
-    c1, c2 = st.columns(2)
 
     sel_key = f"edit_sel_{p_name}"
     if sel_key not in st.session_state or st.session_state[sel_key] not in cat_list:
         st.session_state[sel_key] = default_cat if default_cat in cat_list else cat_list[0]
+
+    st.write("업무를 **선택해서 수정**하거나, '+ 새 업무 추가'를 골라 **새 업무를 등록**할 수 있어요. 대분류 순서도 위아래로 옮길 수 있습니다.")
+    c1, c2 = st.columns(2)
 
     current_sel = st.session_state[sel_key]
 
@@ -633,45 +633,83 @@ def edit_task_popup(p_name, default_cat=None):
 
         with ui_top:
             updated_cats = st.session_state.categories[p_name]
-            cat_sel = st.selectbox("1. 대분류 선택 (이동할 대분류)", updated_cats, key=sel_key)
+            cat_sel = st.selectbox("1. 대분류 선택 (예: 설계검토, 금형수정)", updated_cats, key=sel_key)
 
             styled_cats = []
             for c in updated_cats:
-                if c == cat_sel: styled_cats.append(f"<span style='color:#0E7490; font-weight:bold; border-bottom:2px solid #0E7490;'>{c}</span>")
-                else: styled_cats.append(c)
+                if c == cat_sel: styled_cats.append(f"<span style='color:#0E7490; font-weight:bold; border-bottom:2px solid #0E7490;'>{html.escape(c)}</span>")
+                else: styled_cats.append(html.escape(c))
             order_str = " ➔ ".join(styled_cats)
 
-            st.markdown(f"""
-            <div style='font-size:14px; background:#EEF3F6; padding:10px; border-radius:8px; margin-top:5px; margin-bottom:10px; border:1px solid #D5E0E7;'>
-                <b>현재 순서</b><br>{order_str}
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:14px; background:#EEF3F6; padding:10px; border-radius:8px; margin-top:5px; margin-bottom:10px; border:1px solid #D5E0E7;'><b>현재 순서</b><br>{order_str}</div>", unsafe_allow_html=True)
 
     task_options_with_idx = [(i, d['소분류'] if d['소분류'] else "- (세부업무명 없음)") for i, d in enumerate(raw_data) if d['대분류'] == cat_sel]
+    NEW_OPT = (-1, "+ 새 업무 추가")
+    options_t = task_options_with_idx + [NEW_OPT]
 
     with c2:
         if not task_options_with_idx:
-            st.info("이 대분류에는 아직 세부 업무가 없습니다. 대분류 이름만 수정할 수 있습니다.")
-            with st.form(key=f"edit_empty_cat_{cat_sel}"):
-                new_cat_only = st.text_input("빈 대분류 폴더명 수정", value=cat_sel)
-                if st.form_submit_button("이름 덮어쓰기", type="primary"):
-                    if new_cat_only != cat_sel:
-                        if p_name not in st.session_state.categories: st.session_state.categories[p_name] = []
-                        idx = st.session_state.categories[p_name].index(cat_sel)
-                        st.session_state.categories[p_name][idx] = new_cat_only
-                        st.session_state[sel_key] = new_cat_only
-                        save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
-                        st.success("대분류 이름이 변경되었습니다!")
-                        st.rerun()
-            return
-
-        format_func = lambda x: f"[{x[0]}] {x[1]}"
-        selected_tuple = st.selectbox("2. 세부 업무 선택", task_options_with_idx, format_func=format_func)
+            st.info("이 대분류에는 아직 세부 업무가 없어요. 새 업무를 추가해 주세요.")
+        fmt = lambda x: x[1] if x[0] == -1 else f"[{x[0]}] {x[1]}"
+        selected_tuple = st.selectbox("2. 세부 업무 선택", options_t, format_func=fmt)
 
     target_idx = selected_tuple[0]
-    target_data = raw_data[target_idx]
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+
+    # ---------------- 새 업무 추가 ----------------
+    if target_idx == -1:
+        with st.form(key=f"add_form_{p_name}_{cat_sel}", clear_on_submit=True):
+            a1, a2 = st.columns(2)
+            add_cat = a1.text_input("대분류 (새 이름을 적으면 새 대분류가 만들어져요)", value=cat_sel)
+            add_sub = a2.text_input("세부업무명", placeholder="예: 도면 설계")
+
+            a3, a4, a5 = st.columns(3)
+            add_man = a3.text_input("담당자")
+            add_dep = a4.text_input("관련부서")
+            add_doc = a5.text_input("관련문서")
+
+            a6, a7 = st.columns(2)
+            add_s = a6.date_input("계획 시작일", value=datetime.date.today())
+            add_e = a7.date_input("계획 종료일", value=datetime.date.today())
+
+            if st.form_submit_button("새 업무 추가", type="primary", use_container_width=True, icon=":material/add:"):
+                add_cat = add_cat.strip() or cat_sel
+                add_sub = add_sub.strip()
+                if not add_sub:
+                    st.warning("세부업무명을 입력해 주세요.")
+                elif add_e < add_s:
+                    st.warning("계획 종료일이 시작일보다 빠릅니다.")
+                else:
+                    st.session_state.projects[p_name].append({
+                        "대분류": add_cat, "소분류": add_sub, "담당자": add_man.strip(), "부서": add_dep.strip(), "문서": add_doc.strip(),
+                        "예상시작일": str(add_s), "예상종료일": str(add_e), "실제시작일": None, "실제종료일": None, "메모": ""
+                    })
+                    cats = st.session_state.categories.setdefault(p_name, [])
+                    if add_cat not in cats:
+                        pos = cats.index(cat_sel) + 1 if cat_sel in cats else len(cats)
+                        cats.insert(pos, add_cat)
+                    save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
+                    st.session_state["toast_msg"] = f"[{add_cat}] '{add_sub}' 업무를 추가했어요."
+                    st.rerun()
+
+        # 빈 대분류는 이름도 여기서 고칠 수 있게
+        if not task_options_with_idx:
+            with st.expander("이 대분류 이름 수정", icon=":material/edit:"):
+                with st.form(key=f"edit_empty_cat_{cat_sel}"):
+                    new_cat_only = st.text_input("대분류 이름", value=cat_sel)
+                    if st.form_submit_button("이름 덮어쓰기", type="primary"):
+                        new_cat_only = new_cat_only.strip()
+                        if new_cat_only and new_cat_only != cat_sel:
+                            idx = st.session_state.categories[p_name].index(cat_sel)
+                            st.session_state.categories[p_name][idx] = new_cat_only
+                            save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
+                            st.session_state["toast_msg"] = "대분류 이름을 변경했어요."
+                            st.rerun()
+        return
+
+    # ---------------- 기존 업무 수정 ----------------
+    target_data = raw_data[target_idx]
 
     with st.form(key=f"edit_form_{target_idx}"):
         f1, f2 = st.columns(2)
@@ -695,14 +733,13 @@ def edit_task_popup(p_name, default_cat=None):
         new_est_e = f7.date_input("계획 종료일 수정", value=est_e)
 
         if st.form_submit_button("수정 내용 완벽히 덮어쓰기", type="primary", use_container_width=True):
+            new_cat = new_cat.strip() or cat_sel
             if new_cat != cat_sel:
-                if p_name not in st.session_state.categories: st.session_state.categories[p_name] = []
                 if cat_sel in st.session_state.categories[p_name]:
                     cat_idx = st.session_state.categories[p_name].index(cat_sel)
                     st.session_state.categories[p_name][cat_idx] = new_cat
                 for d in st.session_state.projects[p_name]:
                     if d['대분류'] == cat_sel: d['대분류'] = new_cat
-                st.session_state[sel_key] = new_cat
 
             target_data['소분류'] = new_sub
             target_data['담당자'] = new_man
@@ -712,7 +749,7 @@ def edit_task_popup(p_name, default_cat=None):
             target_data['예상종료일'] = str(new_est_e)
 
             save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
-            st.success("업무 내용이 깔끔하게 덮어쓰기 되었습니다!")
+            st.session_state["toast_msg"] = "업무 내용을 수정했어요."
             st.rerun()
 
 def cb_update_progress(p_name, target_idx, sk, ek, memo_val):
@@ -983,6 +1020,9 @@ else:
     # ----------------------------------------
     p_name = st.session_state.current_page
 
+    if st.session_state.get("toast_msg"):
+        st.toast(st.session_state.pop("toast_msg"), icon=":material/check_circle:")
+
     col_t1, col_t2, col_t3 = st.columns([7.0, 1.5, 1.8], vertical_alignment="center")
 
     with col_t1:
@@ -996,7 +1036,7 @@ else:
             st.session_state.current_page = 'Dashboard'
             st.rerun()
     with col_t3:
-        if st.button("전체 업무 수정", use_container_width=True, icon=":material/edit:"):
+        if st.button("업무 추가/수정", use_container_width=True, icon=":material/edit:"):
             if p_name in st.session_state.categories and st.session_state.categories[p_name]:
                 if f"edit_sel_{p_name}" not in st.session_state:
                     st.session_state[f"edit_sel_{p_name}"] = st.session_state.categories[p_name][0]
@@ -1042,7 +1082,7 @@ else:
                 st.markdown(f"""<div style='position: relative; width: 100%; height: 45px;'><div class='notranslate' style='position: absolute; top: 0; left: 0; width: 285%; padding: 0 15px; background-color: #E6EDF2; font-weight: 700; color: #0F2A3D; font-size: 15px; border-radius: 6px; height: 45px; display: flex; align-items: center; white-space: nowrap; z-index: 10; box-sizing: border-box;'>{html.escape(cat)}</div></div>""", unsafe_allow_html=True)
 
             with cat_c5:
-                if st.button("수정", key=f"edit_cat_{p_name}_{cat}", use_container_width=True, icon=":material/edit:"):
+                if st.button("추가/수정", key=f"edit_cat_{p_name}_{cat}", use_container_width=True, icon=":material/edit:"):
                     st.session_state[f"edit_sel_{p_name}"] = cat
                     edit_task_popup(p_name)
 

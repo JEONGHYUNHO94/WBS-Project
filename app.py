@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import html
+import re
 import streamlit.components.v1 as components
 from io import BytesIO
 from openpyxl import Workbook
@@ -592,6 +593,130 @@ def popup_step2(p_sel):
                     disp_t = t if t else "- (대분류만 저장됨)"
                     st.markdown(f"↳ {disp_t}")
 
+# ==========================================
+# 텍스트로 업무 추가 (메모장 붙여넣기)
+#   # 대분류      ← 이 줄 아래 업무들은 모두 이 대분류
+#   세부업무/담당자/관련부서/관련문서/10/25~11/10
+#   (대분류 줄 없이)  대분류/세부업무/담당자/관련부서/관련문서/10/25~11/10
+# ==========================================
+_DATE_PAT = r"(?:(\d{4})[./-])?(\d{1,2})[./-](\d{1,2})"
+_RANGE_RE = re.compile(_DATE_PAT + r"\s*~\s*" + _DATE_PAT + r"\s*$")
+_ONE_RE = re.compile(r"(?:(?<=[/\s])|^)" + _DATE_PAT + r"\s*$")
+
+def _mk_date(y, m, d, default_year):
+    try:
+        return datetime.date(int(y) if y else default_year, int(m), int(d))
+    except ValueError:
+        return None
+
+def parse_bulk_text(text, default_year=None):
+    default_year = default_year or datetime.date.today().year
+    rows = []
+    cur_cat = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            name = line.lstrip('#').strip()
+            if name:
+                cur_cat = name
+            continue
+
+        notes = []
+        s_date = e_date = None
+        body = line
+        m = _RANGE_RE.search(line)
+        if m:
+            g = m.groups()
+            s_date = _mk_date(g[0], g[1], g[2], default_year)
+            e_date = _mk_date(g[3], g[4], g[5], default_year)
+            body = line[:m.start()]
+            if s_date and e_date and e_date < s_date and not g[3]:
+                e_date = _mk_date(None, g[4], g[5], default_year + 1)
+                notes.append("종료일이 빨라 다음 해로 처리")
+        else:
+            m = _ONE_RE.search(line)
+            if m:
+                g = m.groups()
+                s_date = e_date = _mk_date(g[0], g[1], g[2], default_year)
+                body = line[:m.start()]
+        if not (s_date and e_date):
+            s_date = e_date = None
+            if m:
+                notes.append("날짜를 읽지 못해 오늘로 등록")
+            else:
+                notes.append("일정 없음 → 오늘로 등록")
+        elif e_date < s_date:
+            notes.append("종료일이 시작일보다 빠름 → 확인 필요")
+
+        parts = [p.strip() for p in body.rstrip(' /').split('/')] if body.strip(' /') else []
+        if cur_cat is not None:
+            cat = cur_cat
+            fields = parts
+        else:
+            cat = parts[0] if parts else ""
+            fields = parts[1:]
+        if len(fields) > 4:
+            notes.append("남는 칸은 무시")
+        fields = (fields + [""] * 4)[:4]
+        sub, man, dep, doc = fields
+
+        if not cat:
+            notes.append("대분류 없음 → 건너뜀")
+        if not sub:
+            notes.append("세부업무명 없음 → 건너뜀")
+        rows.append({
+            "대분류": cat, "세부업무": sub, "담당자": man, "관련부서": dep, "관련문서": doc,
+            "시작": s_date, "종료": e_date, "확인": " / ".join(notes),
+            "_ok": bool(cat and sub),
+        })
+    return rows
+
+@st.dialog("텍스트로 업무 추가", width="large")
+def text_import_popup(p_name):
+    st.markdown("메모장에 적은 내용을 붙여넣으면 **표로 미리 확인**한 뒤 한 번에 등록해요. 빈 칸은 비워 두고, 나머지는 '추가/수정'에서 고치면 됩니다.")
+    st.code(
+        "# 기획\n"
+        "절감회의/정현호/구매팀/리스트/10/25~11/10\n"
+        "계획서/홍길동/구매팀/계획서/11/01~11/15\n"
+        "\n"
+        "# 금형수정\n"
+        "도면검토//설계팀//11/10~11/20      ← 담당자·문서는 비움(슬래시 두 번)",
+        language=None)
+    st.caption("순서: 세부업무 / 담당자 / 관련부서 / 관련문서 / 일정(맨 끝, 예: 10/25~11/10). 연도는 올해로 처리돼요. "
+               "# 줄을 하나도 쓰지 않으면 각 줄을 '대분류 / 세부업무 / 담당자 / 관련부서 / 관련문서 / 일정' 순서로 읽어요.")
+
+    txt = st.text_area("업무 목록 붙여넣기", height=200, key=f"bulk_txt_{p_name}",
+                       placeholder="# 대분류\n세부업무/담당자/관련부서/관련문서/10/25~11/10")
+    rows = parse_bulk_text(txt) if txt.strip() else []
+    if not rows:
+        return
+
+    ok_rows = [r for r in rows if r["_ok"]]
+    show = [{k: (str(v) if k in ("시작", "종료") and v else v) for k, v in r.items() if k != "_ok"} for r in rows]
+    for r in show:
+        if not r["시작"]:
+            r["시작"] = str(datetime.date.today()); r["종료"] = str(datetime.date.today())
+    st.markdown(f"**미리보기** · 등록 {len(ok_rows)}건 / 건너뜀 {len(rows) - len(ok_rows)}건")
+    st.dataframe(pd.DataFrame(show), use_container_width=True, hide_index=True)
+
+    if st.button(f"{len(ok_rows)}건 등록", type="primary", use_container_width=True, icon=":material/check:", disabled=not ok_rows):
+        today = datetime.date.today()
+        cats = st.session_state.categories.setdefault(p_name, [])
+        tasks = st.session_state.projects.setdefault(p_name, [])
+        for r in ok_rows:
+            if r["대분류"] not in cats:
+                cats.append(r["대분류"])
+            tasks.append({
+                "대분류": r["대분류"], "소분류": r["세부업무"], "담당자": r["담당자"], "부서": r["관련부서"], "문서": r["관련문서"],
+                "예상시작일": str(r["시작"] or today), "예상종료일": str(r["종료"] or today),
+                "실제시작일": None, "실제종료일": None, "메모": ""
+            })
+        save_data(st.session_state.projects, st.session_state.p_members, st.session_state.categories)
+        st.session_state["toast_msg"] = f"업무 {len(ok_rows)}건을 등록했어요."
+        st.rerun()
+
 @st.dialog("업무 추가 / 수정", width="large")
 def edit_task_popup(p_name, default_cat=None):
     raw_data = st.session_state.projects.get(p_name, [])
@@ -1023,7 +1148,7 @@ else:
     if st.session_state.get("toast_msg"):
         st.toast(st.session_state.pop("toast_msg"), icon=":material/check_circle:")
 
-    col_t1, col_t2, col_t3 = st.columns([7.0, 1.5, 1.8], vertical_alignment="center")
+    col_t1, col_t2, col_t3, col_t4 = st.columns([4.6, 1.5, 1.9, 1.9], vertical_alignment="center")
 
     with col_t1:
         st.markdown(
@@ -1036,6 +1161,9 @@ else:
             st.session_state.current_page = 'Dashboard'
             st.rerun()
     with col_t3:
+        if st.button("텍스트로 추가", use_container_width=True, icon=":material/content_paste:"):
+            text_import_popup(p_name)
+    with col_t4:
         if st.button("업무 추가/수정", use_container_width=True, icon=":material/edit:"):
             if p_name in st.session_state.categories and st.session_state.categories[p_name]:
                 if f"edit_sel_{p_name}" not in st.session_state:
